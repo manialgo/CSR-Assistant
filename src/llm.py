@@ -230,7 +230,7 @@ def triage(
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
                 temperature=0.2,        # Low temp for consistent, grounded responses
-                max_output_tokens=1024,
+                max_output_tokens=2048, # Increased — 1024 was truncating long JSON responses
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(
                     disable=True         # Suppress AFC warning — we don't use tools
                 ),
