@@ -18,7 +18,6 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import HOST, PORT, FRONTEND_DIR, GEMINI_API_KEY
@@ -175,38 +174,30 @@ async def list_demo_accounts():
 
 # ── Frontend serving ──────────────────────────────────────────────────────────
 
-# Serve built frontend if it exists, otherwise serve the fallback HTML
-if FRONTEND_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
+FRONTEND_INDEX = FRONTEND_DIR / "index.html"
+
+if FRONTEND_INDEX.exists():
+    @app.get("/", response_class=HTMLResponse)
+    async def serve_ui():
+        """Serve the chat UI."""
+        return HTMLResponse(FRONTEND_INDEX.read_text(encoding="utf-8"))
 
     @app.get("/{full_path:path}", response_class=HTMLResponse)
-    async def serve_spa(full_path: str):
-        """Serve the SPA index.html for all non-API routes."""
-        index = FRONTEND_DIR / "index.html"
-        if index.exists():
-            return HTMLResponse(index.read_text(encoding="utf-8"))
-        return HTMLResponse("<h1>Frontend not found</h1>", status_code=404)
+    async def serve_ui_paths(full_path: str):
+        """Catch-all so SPA routes don't 404."""
+        # Don't intercept API routes
+        if full_path.startswith("api/") or full_path == "health":
+            raise HTTPException(status_code=404)
+        return HTMLResponse(FRONTEND_INDEX.read_text(encoding="utf-8"))
 
 else:
-    # Fallback: serve the built-in minimal HTML UI
     @app.get("/", response_class=HTMLResponse)
-    async def serve_fallback_ui():
-        """Serve the minimal built-in chat UI."""
-        html_path = Path(__file__).parent / "frontend" / "index.html"
-        if html_path.exists():
-            return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    async def serve_no_ui():
         return HTMLResponse(
-            "<h1>CSR Assistant API is running</h1>"
-            "<p>POST /api/chat to interact. GET /health for status.</p>"
+            "<h1>CSR Assistant is running</h1>"
+            "<p>POST <code>/api/chat</code> to interact. "
+            "GET <code>/health</code> for status.</p>"
         )
-
-    @app.get("/{full_path:path}", response_class=HTMLResponse)
-    async def serve_fallback_all(full_path: str):
-        """Catch-all for SPA routing when using fallback UI."""
-        html_path = Path(__file__).parent / "frontend" / "index.html"
-        if html_path.exists():
-            return HTMLResponse(html_path.read_text(encoding="utf-8"))
-        raise HTTPException(status_code=404)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

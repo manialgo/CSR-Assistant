@@ -13,7 +13,7 @@ ARTICLES_DIR = DATA_DIR / "articles"
 DB_PATH = DATA_DIR / "accounts.db"
 FAISS_INDEX_PATH = DATA_DIR / "faiss.index"
 ARTICLE_METADATA_PATH = DATA_DIR / "article_metadata.json"
-FRONTEND_DIR = BASE_DIR / "frontend" / "dist"
+FRONTEND_DIR = BASE_DIR / "frontend"
 
 # ── Gemini ───────────────────────────────────────────────────────────────────
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")

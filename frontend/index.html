@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CSR Assistant — NexusNow Support Desk</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary:     #1a73e8;
+      --primary-dk:  #1557b0;
+      --resolve:     #1e7e34;
+      --resolve-bg:  #d4edda;
+      --ask:         #856404;
+      --ask-bg:      #fff3cd;
+      --escalate:    #721c24;
+      --escalate-bg: #f8d7da;
+      --surface:     #ffffff;
+      --bg:          #f0f4f8;
+      --border:      #d1d9e0;
+      --text:        #1a1a2e;
+      --text-soft:   #6c757d;
+      --sidebar-w:   320px;
+      --radius:      12px;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Top Bar ──────────────────────────────────────────────────────────── */
+    .topbar {
+      background: var(--primary);
+      color: white;
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      z-index: 100;
+    }
+    .topbar .logo {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .topbar .subtitle {
+      font-size: 13px;
+      opacity: 0.85;
+      border-left: 1px solid rgba(255,255,255,0.3);
+      padding-left: 16px;
+    }
+    .topbar .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #4caf50;
+      margin-left: auto;
+      box-shadow: 0 0 6px #4caf50;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    /* ── Main Layout ──────────────────────────────────────────────────────── */
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ──────────────────────────────────────────────────────────── */
+    .sidebar {
+      width: var(--sidebar-w);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .sidebar-section {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-section h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-soft);
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    /* Account selector */
+    .account-select {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      background: var(--bg);
+      color: var(--text);
+      cursor: pointer;
+      outline: none;
+    }
+    .account-select:focus { border-color: var(--primary); }
+
+    /* Account info card */
+    .account-card {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 12.5px;
+      line-height: 1.6;
+      margin-top: 10px;
+    }
+    .account-card .name {
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+    .account-card .field { color: var(--text-soft); }
+    .account-card .field span { color: var(--text); font-weight: 500; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-active    { background: #d4edda; color: #155724; }
+    .badge-suspended { background: #fff3cd; color: #856404; }
+    .badge-cancelled { background: #f8d7da; color: #721c24; }
+
+    /* Tickets in sidebar */
+    .tickets-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: 1; padding: 16px; }
+    .ticket-item {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 12px;
+      border-left: 3px solid var(--border);
+    }
+    .ticket-item.open      { border-left-color: #dc3545; }
+    .ticket-item.resolved  { border-left-color: #28a745; }
+    .ticket-item.in_progress { border-left-color: #ffc107; }
+    .ticket-item .t-id     { font-weight: 700; color: var(--primary); }
+    .ticket-item .t-type   { color: var(--text); font-weight: 500; }
+    .ticket-item .t-status { color: var(--text-soft); font-size: 11px; }
+    .ticket-item .t-desc   { margin-top: 4px; color: var(--text-soft); line-height: 1.4; }
+
+    /* ── Chat Panel ───────────────────────────────────────────────────────── */
+    .chat-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .chat-header {
+      padding: 14px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .chat-header .acct-badge {
+      font-size: 13px;
+      color: var(--text-soft);
+    }
+    .chat-header .acct-badge span {
+      font-weight: 700;
+      color: var(--primary);
+    }
+    .chat-header .new-chat-btn {
+      margin-left: auto;
+      padding: 6px 14px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--text-soft);
+      transition: all 0.2s;
+    }
+    .chat-header .new-chat-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+    /* Messages */
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scroll-behavior: smooth;
+    }
+
+    .msg { display: flex; gap: 10px; max-width: 100%; }
+    .msg.user { flex-direction: row-reverse; }
+
+    .msg-avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700;
+      flex-shrink: 0;
+    }
+    .msg.user .msg-avatar    { background: var(--primary); color: white; }
+    .msg.agent .msg-avatar   { background: #e8f0fe; color: var(--primary); }
+    .msg.system .msg-avatar  { background: #f3e5f5; color: #7b1fa2; }
+
+    .msg-bubble {
+      max-width: 70%;
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      line-height: 1.6;
+      position: relative;
+    }
+    .msg.user .msg-bubble {
+      background: var(--primary);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+    .msg.agent .msg-bubble {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 4px;
+    }
+    .msg.system .msg-bubble {
+      background: #fafafa;
+      border: 1px dashed var(--border);
+      color: var(--text-soft);
+      font-size: 13px;
+      font-style: italic;
+    }
+
+    /* Action banners on agent messages */
+    .action-banner {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      margin-bottom: 8px;
+    }
+    .action-banner.resolve  { background: var(--resolve-bg);  color: var(--resolve); }
+    .action-banner.ask      { background: var(--ask-bg);      color: var(--ask); }
+    .action-banner.escalate { background: var(--escalate-bg); color: var(--escalate); }
+
+    /* Citations */
+    .citations {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .citation-tag {
+      background: #e8f0fe;
+      color: var(--primary);
+      border: 1px solid #c5d8fb;
+      border-radius: 12px;
+      padding: 2px 10px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    /* Escalation summary box */
+    .escalation-box {
+      margin-top: 12px;
+      background: var(--escalate-bg);
+      border: 1px solid #f5c6cb;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 12.5px;
+    }
+    .escalation-box strong {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--escalate);
+      margin-bottom: 6px;
+    }
+    .escalation-box pre {
+      white-space: pre-wrap;
+      font-family: inherit;
+      color: #721c24;
+      line-height: 1.5;
+    }
+
+    /* Typing indicator */
+    .typing-indicator {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .typing-dots {
+      display: flex;
+      gap: 4px;
+      padding: 12px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      border-bottom-left-radius: 4px;
+    }
+    .typing-dots span {
+      width: 7px; height: 7px;
+      background: var(--text-soft);
+      border-radius: 50%;
+      animation: blink 1.2s infinite;
+    }
+    .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink {
+      0%, 80%, 100% { opacity: 0.2; transform: scale(1); }
+      40%            { opacity: 1;   transform: scale(1.2); }
+    }
+
+    /* Input area */
+    .input-area {
+      padding: 16px 24px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+      flex-shrink: 0;
+    }
+    .input-area textarea {
+      flex: 1;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      font-size: 14px;
+      font-family: inherit;
+      resize: none;
+      outline: none;
+      max-height: 120px;
+      min-height: 46px;
+      line-height: 1.5;
+      transition: border-color 0.2s;
+    }
+    .input-area textarea:focus { border-color: var(--primary); }
+    .input-area textarea:disabled { background: var(--bg); color: var(--text-soft); }
+
+    .send-btn {
+      width: 46px; height: 46px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.2s;
+      font-size: 18px;
+    }
+    .send-btn:hover:not(:disabled)   { background: var(--primary-dk); }
+    .send-btn:disabled { background: var(--border); cursor: not-allowed; }
+
+    /* ── Right panel: Handover ────────────────────────────────────────────── */
+    .handover-panel {
+      width: 280px;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .handover-panel .panel-title {
+      padding: 16px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-soft);
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+    }
+    .handover-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+    .handover-empty {
+      text-align: center;
+      color: var(--text-soft);
+      font-size: 13px;
+      margin-top: 32px;
+      line-height: 1.6;
+    }
+    .handover-summary-box {
+      background: var(--escalate-bg);
+      border: 1px solid #f5c6cb;
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 12.5px;
+      line-height: 1.6;
+    }
+    .handover-summary-box pre {
+      white-space: pre-wrap;
+      font-family: inherit;
+      color: #721c24;
+    }
+    .handover-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 700;
+      color: var(--escalate);
+      margin-bottom: 8px;
+    }
+    .copy-btn {
+      width: 100%;
+      margin-top: 10px;
+      padding: 8px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      color: var(--text-soft);
+      transition: all 0.2s;
+    }
+    .copy-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* Welcome screen */
+    .welcome {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-soft);
+      text-align: center;
+      gap: 12px;
+    }
+    .welcome .icon { font-size: 48px; }
+    .welcome h2 { font-size: 20px; color: var(--text); }
+    .welcome p { font-size: 14px; max-width: 340px; line-height: 1.6; }
+    .scenario-btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      max-width: 400px;
+      margin-top: 12px;
+    }
+    .scenario-btn {
+      padding: 7px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: var(--text);
+    }
+    .scenario-btn:hover { border-color: var(--primary); color: var(--primary); background: #e8f0fe; }
+  </style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div class="topbar">
+  <div class="logo">NexusNow</div>
+  <div class="subtitle">Support Resolution Assistant</div>
+  <div class="status-dot" title="AI Assistant Online"></div>
+</div>
+
+<!-- Main Layout -->
+<div class="main">
+
+  <!-- Sidebar: Account Info -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <h3>Customer Account</h3>
+      <select class="account-select" id="accountSelect">
+        <option value="">-- Select Account --</option>
+      </select>
+      <div class="account-card" id="accountCard" style="display:none"></div>
+    </div>
+    <div class="sidebar-section" style="flex:1;overflow:hidden;display:flex;flex-direction:column;padding-bottom:0;">
+      <h3 style="padding-bottom:10px;">Recent Tickets</h3>
+      <div class="tickets-list" id="ticketsList">
+        <div style="color:var(--text-soft);font-size:13px;">Select an account to view tickets.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chat Panel -->
+  <div class="chat-panel">
+    <div class="chat-header">
+      <span class="acct-badge">Conversation with: <span id="chatAcctLabel">—</span></span>
+      <button class="new-chat-btn" onclick="newChat()">+ New Chat</button>
+    </div>
+
+    <div class="messages" id="messages">
+      <div class="welcome" id="welcomeScreen">
+        <div class="icon">🤝</div>
+        <h2>CSR Resolution Assistant</h2>
+        <p>Select a customer account and start typing. The assistant will resolve, ask for clarification, or escalate — grounded in KB articles.</p>
+        <div class="scenario-btns">
+          <button class="scenario-btn" onclick="tryScenario('My bill is higher than usual this month.')">Billing dispute</button>
+          <button class="scenario-btn" onclick="tryScenario('My internet is not working.')">Internet outage</button>
+          <button class="scenario-btn" onclick="tryScenario('I got unexpected roaming charges.')">Roaming charge</button>
+          <button class="scenario-btn" onclick="tryScenario('I want to upgrade my plan.')">Plan upgrade</button>
+          <button class="scenario-btn" onclick="tryScenario('My mobile data has stopped working.')">Mobile data issue</button>
+          <button class="scenario-btn" onclick="tryScenario('My internet speed is very slow.')">Slow speed</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <textarea
+        id="userInput"
+        placeholder="Type customer message here… (Enter to send, Shift+Enter for new line)"
+        rows="1"
+        oninput="autoResize(this)"
+        onkeydown="handleKey(event)"
+        disabled
+      ></textarea>
+      <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled title="Send">&#9658;</button>
+    </div>
+  </div>
+
+  <!-- Right Panel: Handover Summary -->
+  <div class="handover-panel">
+    <div class="panel-title">Agent Handover</div>
+    <div class="handover-content" id="handoverContent">
+      <div class="handover-empty">
+        Escalation summaries will appear here when the assistant transfers a complex case to a human agent.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // ── State ────────────────────────────────────────────────────────────────
+  let currentAccountId = '';
+  let conversationHistory = [];  // [{role, content}]
+  let isLoading = false;
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', async () => {
+    await loadAccountList();
+    document.getElementById('accountSelect').addEventListener('change', onAccountChange);
+  });
+
+  async function loadAccountList() {
+    try {
+      const res = await fetch('/api/accounts');
+      const data = await res.json();
+      const sel = document.getElementById('accountSelect');
+      data.accounts.forEach(acc => {
+        const opt = document.createElement('option');
+        opt.value = acc.id;
+        opt.textContent = `${acc.id} — ${acc.name} (${acc.status})`;
+        opt.dataset.note = acc.note;
+        sel.appendChild(opt);
+      });
+    } catch (e) {
+      console.error('Failed to load accounts:', e);
+    }
+  }
+
+  async function onAccountChange(e) {
+    const accountId = e.target.value;
+    if (!accountId) {
+      clearAccountCard();
+      return;
+    }
+    currentAccountId = accountId;
+    newChat();
+    await loadAccountInfo(accountId);
+    document.getElementById('chatAcctLabel').textContent = accountId;
+    document.getElementById('userInput').disabled = false;
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('userInput').focus();
+  }
+
+  async function loadAccountInfo(accountId) {
+    try {
+      const res = await fetch(`/api/account/${accountId}`);
+      if (!res.ok) throw new Error('Not found');
+      const acc = await res.json();
+      renderAccountCard(acc);
+      renderTickets(acc.recent_tickets || []);
+    } catch (e) {
+      document.getElementById('accountCard').style.display = 'none';
+    }
+  }
+
+  function renderAccountCard(acc) {
+    const plan = acc.plan;
+    const statusClass = `badge-${acc.account_status}`;
+    const balanceInfo = acc.balance_due > 0
+      ? `<div class="field">Balance Due: <span style="color:#dc3545;font-weight:700;">Rs.${acc.balance_due.toFixed(2)}</span></div>`
+      : '';
+
+    document.getElementById('accountCard').innerHTML = `
+      <div class="name">${acc.customer_name}</div>
+      <div class="field">ID: <span>${acc.account_id}</span></div>
+      <div class="field">Plan: <span>${plan.name}</span></div>
+      <div class="field">Type: <span>${plan.type}${plan.speed_mbps ? ' • ' + plan.speed_mbps + ' Mbps' : ''}${plan.data_gb ? ' • ' + plan.data_gb + ' GB' : ''}</span></div>
+      <div class="field">Cost: <span>Rs.${plan.monthly_cost.toFixed(2)}/mo</span></div>
+      <div class="field">Status: <span class="badge ${statusClass}">${acc.account_status}</span></div>
+      ${balanceInfo}
+      <div class="field">Next Bill: <span>${acc.billing_due_date}</span></div>
+    `;
+    document.getElementById('accountCard').style.display = 'block';
+  }
+
+  function renderTickets(tickets) {
+    const list = document.getElementById('ticketsList');
+    const realTickets = tickets.filter(t => t.ticket_id !== 'BILLING_HISTORY');
+    if (!realTickets.length) {
+      list.innerHTML = '<div style="color:var(--text-soft);font-size:13px;">No recent tickets.</div>';
+      return;
+    }
+    list.innerHTML = realTickets.map(t => `
+      <div class="ticket-item ${t.status}">
+        <div>
+          <span class="t-id">${t.ticket_id}</span>
+          <span class="t-status"> • ${t.status}</span>
+        </div>
+        <div class="t-type">${t.issue_type.replace(/_/g, ' ')}</div>
+        <div class="t-desc">${t.description.substring(0, 90)}${t.description.length > 90 ? '…' : ''}</div>
+      </div>
+    `).join('');
+  }
+
+  function clearAccountCard() {
+    document.getElementById('accountCard').style.display = 'none';
+    document.getElementById('ticketsList').innerHTML =
+      '<div style="color:var(--text-soft);font-size:13px;">Select an account to view tickets.</div>';
+    document.getElementById('chatAcctLabel').textContent = '—';
+    document.getElementById('userInput').disabled = true;
+    document.getElementById('sendBtn').disabled = true;
+    currentAccountId = '';
+  }
+
+  // ── Chat ─────────────────────────────────────────────────────────────────
+  function newChat() {
+    conversationHistory = [];
+    const msgs = document.getElementById('messages');
+    msgs.innerHTML = `
+      <div class="welcome" id="welcomeScreen">
+        <div class="icon">🤝</div>
+        <h2>CSR Resolution Assistant</h2>
+        <p>Select a customer account and start typing. The assistant will resolve, ask for clarification, or escalate — grounded in KB articles.</p>
+        <div class="scenario-btns">
+          <button class="scenario-btn" onclick="tryScenario('My bill is higher than usual this month.')">Billing dispute</button>
+          <button class="scenario-btn" onclick="tryScenario('My internet is not working.')">Internet outage</button>
+          <button class="scenario-btn" onclick="tryScenario('I got unexpected roaming charges.')">Roaming charge</button>
+          <button class="scenario-btn" onclick="tryScenario('I want to upgrade my plan.')">Plan upgrade</button>
+          <button class="scenario-btn" onclick="tryScenario('My mobile data has stopped working.')">Mobile data issue</button>
+          <button class="scenario-btn" onclick="tryScenario('My internet speed is very slow.')">Slow speed</button>
+        </div>
+      </div>`;
+    document.getElementById('handoverContent').innerHTML =
+      '<div class="handover-empty">Escalation summaries will appear here when the assistant transfers a complex case to a human agent.</div>';
+  }
+
+  function tryScenario(text) {
+    if (!currentAccountId) {
+      alert('Please select a customer account first.');
+      return;
+    }
+    document.getElementById('userInput').value = text;
+    sendMessage();
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  }
+
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  }
+
+  async function sendMessage() {
+    const input = document.getElementById('userInput');
+    const text = input.value.trim();
+    if (!text || isLoading || !currentAccountId) return;
+
+    // Hide welcome screen
+    const welcome = document.getElementById('welcomeScreen');
+    if (welcome) welcome.remove();
+
+    isLoading = true;
+    input.value = '';
+    input.style.height = 'auto';
+    input.disabled = true;
+    document.getElementById('sendBtn').disabled = true;
+
+    // Add user message
+    conversationHistory.push({ role: 'user', content: text });
+    appendMessage('user', text);
+
+    // Show typing indicator
+    const typingId = showTyping();
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: currentAccountId,
+          messages: conversationHistory,
+        }),
+      });
+
+      const data = await res.json();
+      removeTyping(typingId);
+
+      if (!res.ok) {
+        throw new Error(data.detail || 'API error');
+      }
+
+      // Add assistant message to history
+      conversationHistory.push({ role: 'assistant', content: data.response });
+
+      // Render response
+      appendAgentMessage(data);
+
+      // Update handover panel if escalation
+      if (data.action === 'escalate' && data.escalation_summary) {
+        updateHandoverPanel(data.escalation_summary);
+      }
+
+    } catch (err) {
+      removeTyping(typingId);
+      appendSystemMessage('Error: ' + err.message + '. Please try again.');
+    } finally {
+      isLoading = false;
+      input.disabled = false;
+      document.getElementById('sendBtn').disabled = false;
+      input.focus();
+    }
+  }
+
+  function appendMessage(role, content) {
+    const msgs = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.className = `msg ${role}`;
+    const initials = role === 'user' ? 'CX' : 'AI';
+    div.innerHTML = `
+      <div class="msg-avatar">${initials}</div>
+      <div class="msg-bubble">${escapeHtml(content).replace(/\n/g, '<br>')}</div>
+    `;
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function appendAgentMessage(data) {
+    const msgs = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.className = 'msg agent';
+
+    const actionIcons = { resolve: '✅', ask: '❓', escalate: '🔴' };
+    const actionLabels = { resolve: 'Resolved', ask: 'Clarification Needed', escalate: 'Escalated to Human' };
+
+    let citationsHtml = '';
+    if (data.citations && data.citations.length) {
+      citationsHtml = `<div class="citations">
+        ${data.citations.map(c => `<span class="citation-tag">📄 ${c}</span>`).join('')}
+      </div>`;
+    }
+
+    let escalationHtml = '';
+    if (data.action === 'escalate' && data.escalation_summary) {
+      escalationHtml = `
+        <div class="escalation-box">
+          <strong>Handover Summary (for human agent)</strong>
+          <pre>${escapeHtml(data.escalation_summary)}</pre>
+        </div>`;
+    }
+
+    div.innerHTML = `
+      <div class="msg-avatar">AI</div>
+      <div class="msg-bubble">
+        <div class="action-banner ${data.action}">
+          ${actionIcons[data.action]} ${actionLabels[data.action]}
+        </div>
+        <div>${escapeHtml(data.response).replace(/\n/g, '<br>')}</div>
+        ${citationsHtml}
+        ${escalationHtml}
+      </div>
+    `;
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function appendSystemMessage(text) {
+    const msgs = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.className = 'msg system';
+    div.innerHTML = `
+      <div class="msg-avatar">⚠</div>
+      <div class="msg-bubble">${escapeHtml(text)}</div>
+    `;
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function showTyping() {
+    const msgs = document.getElementById('messages');
+    const id = 'typing-' + Date.now();
+    const div = document.createElement('div');
+    div.id = id;
+    div.className = 'msg agent typing-indicator';
+    div.innerHTML = `
+      <div class="msg-avatar">AI</div>
+      <div class="typing-dots">
+        <span></span><span></span><span></span>
+      </div>
+    `;
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+    return id;
+  }
+
+  function removeTyping(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  }
+
+  function updateHandoverPanel(summary) {
+    document.getElementById('handoverContent').innerHTML = `
+      <div class="handover-label">Human Agent Handover</div>
+      <div class="handover-summary-box">
+        <pre>${escapeHtml(summary)}</pre>
+      </div>
+      <button class="copy-btn" onclick="copySummary(this)">Copy Summary</button>
+    `;
+  }
+
+  function copySummary(btn) {
+    const pre = btn.previousElementSibling.querySelector('pre');
+    navigator.clipboard.writeText(pre.textContent).then(() => {
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = 'Copy Summary', 2000);
+    });
+  }
+
+  function escapeHtml(text) {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+</script>
+</body>
+</html>
