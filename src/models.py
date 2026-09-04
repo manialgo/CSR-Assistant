@@ -60,6 +60,7 @@ class TriageResult(BaseModel):
     citations: List[str] = Field(default_factory=list, description="Article IDs used in response")
     missing_info: Optional[str] = None
     escalation_reason: Optional[str] = None
+    escalation_summary: Optional[str] = None
 
 
 # ── Outbound ──────────────────────────────────────────────────────────────────

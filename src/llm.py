@@ -5,17 +5,18 @@ RULES:
   - Only this module calls the Gemini generative model.
   - No business logic, no database calls, no routing decisions here.
   - Inputs are plain strings/dicts. Outputs are validated Pydantic models.
-  - All prompts are defined here for auditability.
+  - Model fallback and rate-limit mitigation live here.
 """
 
 import json
 import re
+import time
 from typing import List, Optional
 
 from google import genai
 from google.genai import types
 
-from src.config import GEMINI_API_KEY, GEMINI_CHAT_MODEL
+from src.config import GEMINI_API_KEY, GEMINI_CHAT_MODELS, GEMINI_CHAT_MODEL
 from src.models import AccountInfo, ArticleMatch, TriageResult
 
 
@@ -40,20 +41,20 @@ You have three inputs:
   2. KB articles retrieved for this issue
   3. The conversation so far
 
-IMPORTANT: Recent tickets in the account record are HISTORY — past interactions. They do not mean the current request is complex. Treat each new customer message fresh.
+IMPORTANT: Recent tickets in the account record are HISTORY — past interactions. They do not mean the current request is automatically complex.
 
 ---
 CHOOSE ONE ACTION:
 
 ACTION: resolve  ← PREFER THIS when a KB article covers the issue
-  USE WHEN: A KB article addresses the customer's issue AND you have enough account context.
+  USE WHEN: A KB article addresses the customer's issue AND you have sufficient account context.
   DO: Write a complete, specific response grounded in the KB article.
       Use the customer's real name, plan name, amounts, and dates from the account.
       Cite the KB article ID(s) used.
   EXAMPLE triggers: billing charge question, connection troubleshooting, plan info, payment query, roaming charge.
 
 ACTION: ask  ← USE THIS when one specific piece of info is missing
-  USE WHEN: You cannot resolve because one key fact is unknown (e.g., which device, since when, wired or wifi).
+  USE WHEN: You cannot resolve because one key diagnostic fact is unknown (e.g., which device, since when, wired or wifi).
   DO: Ask exactly ONE targeted question. Never ask what you already know from the account.
 
 ACTION: escalate  ← LAST RESORT only
@@ -62,8 +63,8 @@ ACTION: escalate  ← LAST RESORT only
     - The customer reports fraud, identity theft, or account hijacking
     - The issue has been attempted multiple times in THIS conversation and failed
     - The balance or charges exceed escalation thresholds stated in the KB
-  DO: Write a brief escalation note to the customer AND a structured handover summary.
-  DO NOT escalate just because: there is an open historical ticket, the issue seems complex, or you are mildly uncertain.
+  DO: Write a brief, courteous message to the customer explaining the handover, AND provide a structured handover summary for the human agent.
+  DO NOT escalate just because: there is an open historical ticket or you are mildly uncertain.
 
 ---
 RULES:
@@ -79,9 +80,9 @@ RESPONSE FORMAT (JSON only, no markdown fences):
   "response": "<the full response text — grounded, specific, professional>",
   "citations": ["ART001"],
   "missing_info": "<what is missing — only if action is ask, else null>",
-  "escalation_reason": "<one sentence reason — only if action is escalate, else null>"
+  "escalation_reason": "<one sentence reason — only if action is escalate, else null>",
+  "escalation_summary": "<handover summary formatted with ISSUE:, ESTABLISHED:, TRIED:, PRIORITY: — only if action is escalate, else null>"
 }"""
-
 
 
 def _build_user_prompt(
@@ -103,13 +104,13 @@ def _build_user_prompt(
         ticket_lines = []
         for t in account.recent_tickets[:3]:
             line = (
-                f"  - [{t['ticket_id']}] {t['issue_type']} | "
-                f"Status: {t['status']} | "
-                f"Date: {t['created_at']} | "
-                f"{t['description'][:100]}"
+                f"  - [{t.get('ticket_id')}] {t.get('issue_type')} | "
+                f"Status: {t.get('status')} | "
+                f"Date: {t.get('created_at')} | "
+                f"{str(t.get('description', ''))[:100]}"
             )
             if t.get("resolution"):
-                line += f" | Resolution: {t['resolution'][:80]}"
+                line += f" | Resolution: {str(t.get('resolution'))[:80]}"
             ticket_lines.append(line)
         recent_tickets_text = "\n".join(ticket_lines)
     else:
@@ -175,26 +176,62 @@ Determine the correct action (resolve / ask / escalate) and respond in valid JSO
 
 def _extract_json(text: str) -> dict:
     """
-    Extract JSON from the LLM response.
-    Handles markdown code blocks and bare JSON robustly.
+    Robust JSON extractor with regex fallback for unescaped characters or truncation.
     """
-    # Strip markdown code fences if present
     text = text.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s*```$", "", text)
     text = text.strip()
 
+    # Attempt 1: standard json decode
     try:
         return json.loads(text)
-    except json.JSONDecodeError as exc:
-        # Try to find first { ... } block
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except json.JSONDecodeError:
-                pass
-        raise ValueError(f"Could not parse LLM response as JSON: {exc}\nRaw: {text[:300]}")
+    except json.JSONDecodeError:
+        pass
+
+    # Attempt 2: find first { ... } with strict=False
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        blob = match.group()
+        try:
+            return json.loads(blob, strict=False)
+        except json.JSONDecodeError:
+            pass
+
+    # Attempt 3: Regex field extraction as graceful fallback
+    extracted = {}
+    act_match = re.search(r'"action"\s*:\s*"([^"]+)"', text)
+    if act_match:
+        extracted["action"] = act_match.group(1)
+
+    conf_match = re.search(r'"confidence"\s*:\s*"([^"]+)"', text)
+    if conf_match:
+        extracted["confidence"] = conf_match.group(1)
+
+    resp_match = re.search(r'"response"\s*:\s*"((?:[^"\\]|\\.)*)"', text, re.DOTALL)
+    if resp_match:
+        try:
+            extracted["response"] = resp_match.group(1).encode('utf-8').decode('unicode-escape')
+        except Exception:
+            extracted["response"] = resp_match.group(1)
+    elif '"response"' in text:
+        after_resp = text.split('"response"', 1)[1]
+        raw_val = re.search(r':\s*"(.*?)(?:"\s*,\s*"\w+"|"\}|$)', after_resp, re.DOTALL)
+        if raw_val:
+            extracted["response"] = raw_val.group(1).replace('\\n', '\n')
+
+    cite_matches = re.findall(r'ART\d{3}', text)
+    if cite_matches:
+        extracted["citations"] = list(dict.fromkeys(cite_matches))
+
+    summary_match = re.search(r'"escalation_summary"\s*:\s*"((?:[^"\\]|\\.)*)"', text, re.DOTALL)
+    if summary_match:
+        extracted["escalation_summary"] = summary_match.group(1).replace('\\n', '\n')
+
+    if extracted.get("action") or extracted.get("response"):
+        return extracted
+
+    raise ValueError(f"Could not parse LLM response as JSON\nRaw: {text[:300]}")
 
 
 # ── Main triage call ──────────────────────────────────────────────────────────
@@ -206,59 +243,64 @@ def triage(
 ) -> TriageResult:
     """
     Call Gemini to triage a customer support request.
-
-    Args:
-        account  : Full customer account context
-        messages : Conversation history [{"role": "user"|"assistant", "content": "..."}]
-        articles : Retrieved KB articles (may be empty)
-
-    Returns:
-        TriageResult with action, confidence, response, citations
-
-    Raises:
-        RuntimeError on unrecoverable LLM failure (caller should escalate gracefully)
+    Includes multi-model fallback to handle rate-limits (429) or missing models (404).
     """
     client = _get_client()
 
     system_prompt = _build_system_prompt()
     user_prompt = _build_user_prompt(account, messages, articles)
 
-    try:
-        response = client.models.generate_content(
-            model=GEMINI_CHAT_MODEL,
-            contents=user_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                temperature=0.2,        # Low temp for consistent, grounded responses
-                max_output_tokens=2048, # Increased — 1024 was truncating long JSON responses
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                    disable=True         # Suppress AFC warning — we don't use tools
+    raw_text = None
+    last_error = None
+
+    # Deduplicated model order starting with configured primary
+    models_to_try = [GEMINI_CHAT_MODEL]
+    for m in GEMINI_CHAT_MODELS:
+        if m not in models_to_try:
+            models_to_try.append(m)
+
+    for model_name in models_to_try:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    temperature=0.2,
+                    max_output_tokens=2048,
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                        disable=True
+                    ),
                 ),
-            ),
-        )
+            )
+            raw_text = response.text.strip()
+            break
+        except Exception as exc:
+            err_str = str(exc).lower()
+            print(f"[LLM] Model '{model_name}' encountered: {exc}. Trying fallback...")
+            last_error = exc
+            # Give a moment if quota / rate limit was hit
+            if "429" in err_str or "resource_exhausted" in err_str:
+                time.sleep(1.5)
+            continue
 
-        raw_text = response.text.strip()
+    if raw_text is None:
+        raise RuntimeError(f"All Gemini models exhausted: {last_error}") from last_error
 
-    except Exception as exc:
-        raise RuntimeError(f"Gemini API call failed: {exc}") from exc
-
-    # Parse and validate the structured output
+    # Parse structured output
     try:
         data = _extract_json(raw_text)
     except ValueError as exc:
         raise RuntimeError(f"LLM returned unparseable response: {exc}") from exc
 
-    # Validate action
     action = data.get("action", "escalate")
     if action not in ("resolve", "ask", "escalate"):
         action = "escalate"
 
-    # Validate confidence
     confidence = data.get("confidence", "low")
     if confidence not in ("high", "medium", "low"):
         confidence = "low"
 
-    # Validate citations — only include IDs that were actually provided
     valid_article_ids = {a.article_id for a in articles}
     raw_citations = data.get("citations", [])
     if isinstance(raw_citations, list):
@@ -273,6 +315,7 @@ def triage(
         citations=citations,
         missing_info=data.get("missing_info"),
         escalation_reason=data.get("escalation_reason"),
+        escalation_summary=data.get("escalation_summary"),
     )
 
 
@@ -285,50 +328,34 @@ def build_escalation_summary(
 ) -> str:
     """
     Build a structured handover summary for human agents.
-    Called when action == escalate, to give the human agent full context.
+    If triage already generated one, use it. Otherwise, generate deterministically
+    without consuming any extra API quota or risking rate-limit errors.
     """
-    client = _get_client()
+    if triage_result.escalation_summary:
+        return triage_result.escalation_summary
 
-    conv_text = "\n".join(
-        f"{'CUSTOMER' if m['role'] == 'user' else 'AGENT'}: {m['content']}"
-        for m in messages
+    last_user_turn = next(
+        (m["content"] for m in reversed(messages) if m["role"] == "user"),
+        "Customer assistance requested"
     )
 
-    prompt = f"""Create a brief, structured handover summary for a human support agent.
+    tried_items = []
+    for m in messages:
+        if m["role"] == "assistant":
+            tried_items.append(m["content"][:70].replace("\n", " "))
+    tried_str = "; ".join(tried_items) if tried_items else "Initial automated triage"
 
-Customer: {account.customer_name} | Account: {account.account_id}
-Plan: {account.plan.name} | Status: {account.account_status}
+    priority = "Medium"
+    if account.account_status != "active" or account.balance_due > 50:
+        priority = "High"
 
-Conversation:
-{conv_text}
+    reason = triage_result.escalation_reason or "Requires human review"
 
-Escalation reason: {triage_result.escalation_reason or 'Complex case requiring human review'}
-
-Write the summary in this exact format:
-ISSUE: <one sentence describing what the customer needs>
-ESTABLISHED: <bullet points of what is confirmed/known>
-TRIED: <what has already been attempted in this conversation, or None>
-PRIORITY: <Low / Medium / High based on account status and issue severity>"""
-
-    try:
-        response = client.models.generate_content(
-            model=GEMINI_CHAT_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                max_output_tokens=400,
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                    disable=True
-                ),
-            ),
-        )
-        return response.text.strip()
-    except Exception as exc:
-        # Fallback — build a minimal summary without LLM
-        return (
-            f"ISSUE: Customer {account.customer_name} requires human assistance.\n"
-            f"ESTABLISHED: Account {account.account_id} on {account.plan.name} plan.\n"
-            f"TRIED: Automated triage attempted.\n"
-            f"PRIORITY: Medium\n"
-            f"NOTE: LLM summary generation failed — {exc}"
-        )
+    return (
+        f"ISSUE: {last_user_turn[:120]}\n"
+        f"ESTABLISHED: Customer {account.customer_name} (Acct: {account.account_id}), "
+        f"Plan: {account.plan.name} ({account.plan.type}), Status: {account.account_status.upper()}, "
+        f"Balance: Rs.{account.balance_due:.2f}. Reason: {reason}.\n"
+        f"TRIED: {tried_str[:200]}\n"
+        f"PRIORITY: {priority}"
+    )

@@ -17,7 +17,14 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 
 # ── Gemini ───────────────────────────────────────────────────────────────────
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_CHAT_MODEL = "gemini-3.5-flash"
+# Supported Gemini models with automatic fallback if quota/availability issues occur:
+GEMINI_CHAT_MODELS = [
+    os.environ.get("GEMINI_CHAT_MODEL", "gemini-2.5-flash-lite"),
+    "gemini-flash-latest",
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+]
+GEMINI_CHAT_MODEL = GEMINI_CHAT_MODELS[0]
 GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"
 
 # ── Retrieval ────────────────────────────────────────────────────────────────

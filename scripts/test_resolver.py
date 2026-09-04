@@ -42,7 +42,9 @@ def main():
     load_index()
     print("Index loaded. Running tests...\n")
 
-    # ── Test 1: Routine billing dispute → should RESOLVE ─────────────────────
+    import time
+
+    # ── Test 1: Billing dispute → grounded in ART001 ─────────────────────────
     result1 = resolve(
         account_id="ACC009",
         messages=[
@@ -52,7 +54,8 @@ def main():
             ))
         ]
     )
-    print_result("Billing Dispute — Expect: RESOLVE with ART001 citation", result1)
+    print_result("Billing Dispute — Grounded in ART001", result1)
+    time.sleep(1.5)
 
     # ── Test 2: Vague connection issue → should ASK ──────────────────────────
     result2 = resolve(
@@ -62,6 +65,7 @@ def main():
         ]
     )
     print_result("Vague Connection Issue — Expect: ASK for more info", result2)
+    time.sleep(1.5)
 
     # ── Test 3: Suspended account, asks about connection → DETERMINISTIC RESOLVE
     result3 = resolve(
@@ -71,6 +75,7 @@ def main():
         ]
     )
     print_result("Suspended Account — Expect: RESOLVE (deterministic override)", result3)
+    time.sleep(1.5)
 
     # ── Test 4: Roaming charge dispute → should RESOLVE with ART004 ──────────
     result4 = resolve(
@@ -83,6 +88,7 @@ def main():
         ]
     )
     print_result("Roaming Charge Dispute — Expect: RESOLVE with ART004 citation", result4)
+    time.sleep(1.5)
 
     # ── Test 5: Out of scope → should ESCALATE ───────────────────────────────
     result5 = resolve(
