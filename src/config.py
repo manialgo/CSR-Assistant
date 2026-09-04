@@ -22,7 +22,7 @@ GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"
 
 # ── Retrieval ────────────────────────────────────────────────────────────────
 TOP_K_ARTICLES = 3           # Number of KB articles to retrieve per query
-SIMILARITY_THRESHOLD = 0.65  # Below this score → no reliable article found
+SIMILARITY_THRESHOLD = 0.45  # Cosine similarity cutoff — tuned for 8-article KB
 
 # ── Triage thresholds ────────────────────────────────────────────────────────
 # Confidence returned by LLM triage step drives routing:
