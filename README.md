@@ -2,6 +2,8 @@ TRACK_ID=PS04
 
 # CSR Assistant — Customer Support Resolution Assistant
 
+![NexusNow CSR Assistant](assets/submission_banner.jpg)
+
 An AI-powered support desk assistant for a broadband and mobile provider. It triages incoming customer requests using the conversation history, customer account records, and a knowledge base of support articles — resolving routine cases, asking targeted follow-up questions, or escalating complex cases to human agents with a full context handover.
 
 ## What It Does
