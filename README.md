@@ -101,4 +101,6 @@ CSR-Assistant/
 
 ## Demo Video
 
-[Watch Demo Video](https://github.com/manialgo/CSR-Assistant) *(Link updated for submission)*
+[![Watch the Demo Video](https://img.youtube.com/vi/x3XBU6_Zpxw/maxresdefault.jpg)](https://www.youtube.com/watch?v=x3XBU6_Zpxw)
+
+👉 **[Watch the full demo video on YouTube](https://www.youtube.com/watch?v=x3XBU6_Zpxw)**
