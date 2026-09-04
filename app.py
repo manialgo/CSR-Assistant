@@ -49,6 +49,20 @@ async def lifespan(app: FastAPI):
     print(f"[STARTUP] CSR Assistant ready at http://localhost:{PORT}")
     print("[STARTUP] Press Ctrl+C to stop.\n")
 
+    # Automatically open the web browser
+    import threading
+    import webbrowser
+    import time
+
+    def _launch_browser():
+        time.sleep(1.0)
+        try:
+            webbrowser.open(f"http://localhost:{PORT}")
+        except Exception:
+            pass
+
+    threading.Thread(target=_launch_browser, daemon=True).start()
+
     yield  # App runs here
 
     print("[SHUTDOWN] CSR Assistant stopped.")
