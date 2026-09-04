@@ -239,6 +239,9 @@ def triage(
                 system_instruction=system_prompt,
                 temperature=0.2,        # Low temp for consistent, grounded responses
                 max_output_tokens=1024,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                    disable=True         # Suppress AFC warning — we don't use tools
+                ),
             ),
         )
 
@@ -322,6 +325,9 @@ PRIORITY: <Low / Medium / High based on account status and issue severity>"""
             config=types.GenerateContentConfig(
                 temperature=0.1,
                 max_output_tokens=400,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                    disable=True
+                ),
             ),
         )
         return response.text.strip()
